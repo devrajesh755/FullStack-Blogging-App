@@ -1,0 +1,94 @@
+pipeline {
+    agent any
+    
+    tools{
+        maven 'maven3'
+        jdk 'jdk17'
+    }
+    environment{
+        SCANNER_HOME= tool 'sonar-scanner'
+    }
+      
+      stages {
+          
+          
+        stage('git Checkout') {
+            steps {
+                git branch: 'main', 
+                credentialsId: '997d6118-e3ae-44d4-8832-9a5ea2d63d91', 
+                url: 'https://github.com/devrajesh755/FullStack-Blogging-App.git'
+            }
+        }
+        
+        stage('Compile') {
+            steps {
+                sh "mvn compile"
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                sh "mvn test"
+            }
+        }
+        
+        stage('Trivy FS Scan') {
+            steps {
+                sh "trivy fs --format table -o fs.html ."
+            }
+        }
+        
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar-server') {
+                 sh ''' 
+                  $SCANNER_HOME/bin/sonar-scanner \
+                  -Dsonar.projectName=Blogging-app \
+                  -Dsonar.projectKey=Blogging-app \
+                  -Dsonar.java.binaries=target
+                  '''
+               }
+            }
+        }
+        
+         stage('Build') {
+            steps {
+               sh 'mvn clean package'
+            }
+        }
+        
+        stage('Publish Artifacts') {
+            steps {
+               withMaven(globalMavenSettingsConfig: 'maven-setting', jdk:'jdk17',maven: 'maven3', traceability: true) {
+                 sh "mvn deploy"
+                   }
+            }
+        }
+        
+        stage('Docker Build && Tag') {
+            steps {
+                 script{
+                       withDockerRegistry(credentialsId: 'dockerhub-creds', toolName: 'docker') {
+                              sh "docker build -t rajesh289/bloggingapp:latest ."
+                      }
+                 }
+            }
+        }
+        
+        stage('Trivy Image Scan') {
+            steps {
+                sh "trivy image --format table -o image.html rajesh289/bloggingapp:latest"
+            }
+        }
+        
+         stage('Docker Push Image') {
+            steps {
+                 script{
+                       withDockerRegistry(credentialsId: 'dockerhub-creds', toolName: 'docker') {
+                              sh "docker push rajesh289/bloggingapp:latest"
+                      }
+                 }
+            }
+        }
+    }
+}
